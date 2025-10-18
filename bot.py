@@ -115,3 +115,10 @@ if __name__ == '__main__':
         app = asyncio.run(start_webhook())
         port = int(os.getenv('PORT', 8080))
         web.run_app(app, host='0.0.0.0', port=port)
+try:
+    app = asyncio.run(start_webhook())
+except RuntimeError:
+    # Sometimes asyncio.run inside a running loop fails (like in Docker build), 
+    # fallback to creating app manually
+    loop = asyncio.get_event_loop()
+    app = loop.run_until_complete(start_webhook())
