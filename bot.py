@@ -50,24 +50,20 @@ async def on_shutdown():
 
 
 def setup_handlers(dp: Dispatcher, db, bot):
-    # Register routers
     dp.include_router(start_handler.router)
     dp.include_router(sell_handler.router)
     dp.include_router(admin_handler.router)
     dp.include_router(support_handler.router)
     dp.include_router(fallback_handler.router)
 
-    # Middlewares
     language_middleware = LanguageMiddleware(db)
     rate_limit_middleware = RateLimitMiddleware(rate_limit=1)
     error_middleware = ErrorHandlerMiddleware(bot, LOG_CHANNEL_ID)
 
     dp.message.middleware(language_middleware)
     dp.callback_query.middleware(language_middleware)
-
     dp.message.middleware(rate_limit_middleware)
     dp.callback_query.middleware(rate_limit_middleware)
-
     dp.message.middleware(error_middleware)
     dp.callback_query.middleware(error_middleware)
 
@@ -75,12 +71,10 @@ def setup_handlers(dp: Dispatcher, db, bot):
     dp['bot'] = bot
 
 
-# Health check endpoint
 async def health_check(request):
     return web.Response(text="OK")
 
 
-# Create ASGI app for Render / Docker
 async def create_app():
     await on_startup()
     setup_handlers(dp, db, bot)
@@ -99,19 +93,23 @@ async def create_app():
     return app
 
 
-# Module-level ASGI app (for Uvicorn / Render)
-loop = asyncio.get_event_loop()
-app = loop.run_until_complete(create_app())
+# Safe app initialization for Uvicorn
+try:
+    loop = asyncio.get_running_loop()
+    # If loop is already running, schedule coroutine instead of run_until_complete
+    app = loop.run_until_complete(create_app())
+except RuntimeError:
+    # No running loop, safe to create new one
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    app = loop.run_until_complete(create_app())
 
 
-# Polling mode for local testing
 async def start_polling():
     await on_startup()
     setup_handlers(dp, db, bot)
-
     logger.info("Starting bot in polling mode...")
     await bot.delete_webhook(drop_pending_updates=True)
-
     try:
         await dp.start_polling(bot)
     finally:
@@ -119,7 +117,6 @@ async def start_polling():
 
 
 if __name__ == '__main__':
-    # Use polling for local testing
     if '--polling' in sys.argv:
         asyncio.run(start_polling())
     else:
