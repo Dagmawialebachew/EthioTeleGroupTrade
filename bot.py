@@ -16,7 +16,6 @@ from handlers import start_handler, sell_handler, admin_handler, support_handler
 
 # -------------------- Load config --------------------
 load_dotenv()
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -38,24 +37,22 @@ storage = MemoryStorage()
 dp = Dispatcher(storage=storage)
 
 # -------------------- Startup / Shutdown --------------------
-async def on_startup():
+async def on_startup(app: web.Application = None):
     await db.init_db()
     logger.info("Database initialized")
 
-async def on_shutdown():
+async def on_shutdown(app: web.Application = None):
     await bot.session.close()
     logger.info("Bot shutting down")
 
 # -------------------- Handlers & Middleware --------------------
 def setup_handlers(dp: Dispatcher):
-    # Include routers
     dp.include_router(start_handler.router)
     dp.include_router(sell_handler.router)
     dp.include_router(admin_handler.router)
     dp.include_router(support_handler.router)
     dp.include_router(fallback_handler.router)
 
-    # Middleware
     dp.message.middleware(LanguageMiddleware(db))
     dp.callback_query.middleware(LanguageMiddleware(db))
     dp.message.middleware(RateLimitMiddleware(rate_limit=1))
@@ -63,7 +60,6 @@ def setup_handlers(dp: Dispatcher):
     dp.message.middleware(ErrorHandlerMiddleware(bot, LOG_CHANNEL_ID))
     dp.callback_query.middleware(ErrorHandlerMiddleware(bot, LOG_CHANNEL_ID))
 
-    # Store shared objects
     dp['db'] = db
     dp['bot'] = bot
 
@@ -72,27 +68,36 @@ async def health_check(request):
     return web.Response(text="OK")
 
 # -------------------- ASGI App for Render / Uvicorn --------------------
-async def create_app() -> web.Application:
-    await on_startup()
-    setup_handlers(dp)
-
-    webhook_url = f"{BASE_URL}{WEBHOOK_PATH}"
-    await bot.set_webhook(webhook_url, drop_pending_updates=True)
-    logger.info(f"Webhook set to: {webhook_url}")
-
+def create_app() -> web.Application:
+    """Return a ready-to-use web.Application (no coroutine)."""
     app = web.Application()
     app.router.add_get("/health", health_check)
+
+    setup_handlers(dp)
 
     webhook_handler = SimpleRequestHandler(dispatcher=dp, bot=bot)
     webhook_handler.register(app, path=WEBHOOK_PATH)
 
     setup_application(app, dp, bot=bot)
+
+    # Startup/shutdown signals
+    app.on_startup.append(on_startup)
+    app.on_cleanup.append(on_shutdown)
+
+    # Setup webhook URL asynchronously inside on_startup
+    async def setup_webhook(app: web.Application):
+        webhook_url = f"{BASE_URL}{WEBHOOK_PATH}"
+        await bot.set_webhook(webhook_url, drop_pending_updates=True)
+        logger.info(f"Webhook set to: {webhook_url}")
+
+    app.on_startup.append(setup_webhook)
+
     return app
 
 # -------------------- Polling Mode --------------------
 async def start_polling():
-    await on_startup()
     setup_handlers(dp)
+    await on_startup()
     logger.info("Starting bot in polling mode...")
     await bot.delete_webhook(drop_pending_updates=True)
     try:
@@ -105,6 +110,6 @@ if __name__ == "__main__":
     if "--polling" in sys.argv:
         asyncio.run(start_polling())
     else:
-        # Expose ASGI app as module-level variable for Render
-        app = asyncio.run(create_app())
+        # For Render / Uvicorn ASGI
+        app = create_app()
         web.run_app(app, host="0.0.0.0", port=PORT)
