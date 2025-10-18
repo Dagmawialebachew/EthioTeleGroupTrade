@@ -22,4 +22,4 @@ EXPOSE 8080
 
 # Command to run the bot using Gunicorn with the specialized aiohttp worker.
 # This points to the synchronous factory function main:create_app.
-CMD ["sh", "-c", "gunicorn main:create_app --worker-class aiohttp.GunicornWebWorker --bind 0.0.0.0:${PORT:-8080}"]
+CMD ["sh", "-c", "gunicorn bot:create_app --worker-class aiohttp.GunicornWebWorker --bind 0.0.0.0:${PORT:-8080}"]
