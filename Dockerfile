@@ -22,4 +22,4 @@ EXPOSE 8000
 
 # Command to run the bot with Uvicorn
 # Uses PORT env var if provided by Render
-CMD ["sh", "-c", "uvicorn bot:app --host 0.0.0.0 --port ${PORT:-8000}"]
+CMD ["sh", "-c", "uvicorn bot:create_app --host 0.0.0.0 --port ${PORT:-8000}"]
