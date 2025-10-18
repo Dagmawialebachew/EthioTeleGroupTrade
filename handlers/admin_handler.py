@@ -1,6 +1,6 @@
 from aiogram import Router, F, Bot
 from aiogram.filters import Command
-from bot import ADMIN_ID
+from config import ADMIN_ID
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
