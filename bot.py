@@ -75,7 +75,8 @@ async def health_check(request):
     return web.Response(text="OK")
 
 
-async def create_app():
+async def create_app() -> web.Application:
+    """ASGI app for Uvicorn / Render"""
     await on_startup()
     setup_handlers(dp, db, bot)
 
@@ -84,7 +85,7 @@ async def create_app():
     logger.info(f"Webhook set to: {webhook_url}")
 
     app = web.Application()
-    app.router.add_get('/health', health_check)
+    app.router.add_get("/health", health_check)
 
     webhook_handler = SimpleRequestHandler(dispatcher=dp, bot=bot)
     webhook_handler.register(app, path=WEBHOOK_PATH)
@@ -93,18 +94,7 @@ async def create_app():
     return app
 
 
-# Safe app initialization for Uvicorn
-try:
-    loop = asyncio.get_running_loop()
-    # If loop is already running, schedule coroutine instead of run_until_complete
-    app = loop.run_until_complete(create_app())
-except RuntimeError:
-    # No running loop, safe to create new one
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    app = loop.run_until_complete(create_app())
-
-
+# Polling mode (local testing)
 async def start_polling():
     await on_startup()
     setup_handlers(dp, db, bot)
@@ -116,8 +106,9 @@ async def start_polling():
         await on_shutdown()
 
 
-if __name__ == '__main__':
-    if '--polling' in sys.argv:
+if __name__ == "__main__":
+    if "--polling" in sys.argv:
         asyncio.run(start_polling())
     else:
-        web.run_app(app, host='0.0.0.0', port=PORT)
+        # Uvicorn will handle the event loop automatically
+        web.run_app(create_app(), host="0.0.0.0", port=PORT)
