@@ -21,4 +21,4 @@ COPY . .
 EXPOSE 8000
 
 # Command to run the bot with Uvicorn using factory flag
-CMD ["sh", "-c", "uvicorn bot:create_app --factory --host 0.0.0.0 --port ${PORT:-8000}"]
+CMD ["sh", "-c", "uvicorn bot:create_app --factory --host 0.0.0.0 --port ${PORT:-8000} --loop asyncio"]

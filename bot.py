@@ -70,20 +70,30 @@ async def on_shutdown(app: web.Application):
 # -------------------- Health Check --------------------
 async def health_check(request):
     return web.Response(text="OK")
-
 # -------------------- ASGI App --------------------
 def create_app() -> web.Application:
     app = web.Application()
     app.router.add_get("/health", health_check)
 
+    # Setup your aiogram handlers and middlewares
     setup_handlers(dp)
 
+    # Register webhook handler
     webhook_handler = SimpleRequestHandler(dispatcher=dp, bot=bot)
     webhook_handler.register(app, path=WEBHOOK_PATH)
     setup_application(app, dp, bot=bot)
 
+    # Startup and cleanup signals
     app.on_startup.append(on_startup)
     app.on_cleanup.append(on_shutdown)
+
+    # Setup webhook asynchronously
+    async def setup_webhook(app: web.Application):
+        webhook_url = f"{BASE_URL}{WEBHOOK_PATH}"
+        await bot.set_webhook(webhook_url, drop_pending_updates=True)
+        logger.info(f"Webhook set to: {webhook_url}")
+
+    app.on_startup.append(setup_webhook)
 
     return app
 
