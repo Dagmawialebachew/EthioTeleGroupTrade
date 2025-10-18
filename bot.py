@@ -20,18 +20,21 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Config
 BOT_TOKEN = os.getenv('BOT_TOKEN')
-
 ADMIN_ID = [int(x.strip()) for x in os.getenv("ADMIN_ID", "").split(",") if x.strip().isdigit()]
 CHANNEL_ID = os.getenv('CHANNEL_ID', '@TeleTradeET')
 DATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///data.db')
 LOG_CHANNEL_ID = int(os.getenv('LOG_CHANNEL_ID', 0)) if os.getenv('LOG_CHANNEL_ID') else None
 BASE_URL = os.getenv('BASE_URL', '')
 WEBHOOK_PATH = os.getenv('WEBHOOK_PATH', '/webhook')
+PORT = int(os.getenv('PORT', 8080))
 
+# Database
 db_path = DATABASE_URL.replace('sqlite:///', '')
 db = Database(db_path)
 
+# Bot and dispatcher
 bot = Bot(token=BOT_TOKEN)
 storage = MemoryStorage()
 dp = Dispatcher(storage=storage)
@@ -47,12 +50,14 @@ async def on_shutdown():
 
 
 def setup_handlers(dp: Dispatcher, db, bot):
+    # Register routers
     dp.include_router(start_handler.router)
     dp.include_router(sell_handler.router)
     dp.include_router(admin_handler.router)
     dp.include_router(support_handler.router)
     dp.include_router(fallback_handler.router)
 
+    # Middlewares
     language_middleware = LanguageMiddleware(db)
     rate_limit_middleware = RateLimitMiddleware(rate_limit=1)
     error_middleware = ErrorHandlerMiddleware(bot, LOG_CHANNEL_ID)
@@ -70,13 +75,14 @@ def setup_handlers(dp: Dispatcher, db, bot):
     dp['bot'] = bot
 
 
+# Health check endpoint
 async def health_check(request):
     return web.Response(text="OK")
 
 
-async def start_webhook():
+# Create ASGI app for Render / Docker
+async def create_app():
     await on_startup()
-
     setup_handlers(dp, db, bot)
 
     webhook_url = f"{BASE_URL}{WEBHOOK_PATH}"
@@ -90,13 +96,17 @@ async def start_webhook():
     webhook_handler.register(app, path=WEBHOOK_PATH)
 
     setup_application(app, dp, bot=bot)
-
     return app
 
 
+# Module-level ASGI app (for Uvicorn / Render)
+loop = asyncio.get_event_loop()
+app = loop.run_until_complete(create_app())
+
+
+# Polling mode for local testing
 async def start_polling():
     await on_startup()
-
     setup_handlers(dp, db, bot)
 
     logger.info("Starting bot in polling mode...")
@@ -109,16 +119,8 @@ async def start_polling():
 
 
 if __name__ == '__main__':
+    # Use polling for local testing
     if '--polling' in sys.argv:
         asyncio.run(start_polling())
     else:
-        app = asyncio.run(start_webhook())
-        port = int(os.getenv('PORT', 8080))
-        web.run_app(app, host='0.0.0.0', port=port)
-try:
-    app = asyncio.run(start_webhook())
-except RuntimeError:
-    # Sometimes asyncio.run inside a running loop fails (like in Docker build), 
-    # fallback to creating app manually
-    loop = asyncio.get_event_loop()
-    app = loop.run_until_complete(start_webhook())
+        web.run_app(app, host='0.0.0.0', port=PORT)
