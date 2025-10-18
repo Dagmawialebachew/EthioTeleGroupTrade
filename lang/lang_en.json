@@ -1,0 +1,144 @@
+{
+  "welcome": "👋 Welcome to Ethio Tele Trade Bot!\n\nTurn your Telegram group into cash 💸 We buy active groups and pay you fast, directly in Birr.",
+  "select_language": "🌐 Please choose your preferred language:",
+  "language_changed": "✅ Language changed successfully.",
+  "join_channel_required": "🛑 Access Required\nTo use this bot, please join our official channel first:",
+  "join_channel_button": "🔗 Join Channel",
+  "verify_join_button": "✔️ I Joined - Verify",
+  
+  "main_menu_admin_panel": "🔑 Admin Panel",
+  "admin_manage_submissions": "📑 Manage Submissions",
+  "admin_payments": "💰 Payments",
+  "admin_broadcast": "📢 Broadcast Message",
+  "admin_back": "⬅️ Back to Main",
+  
+  "not_joined_yet": "❌ You haven’t joined the channel yet. Please join and try again.",
+  "verified_success": "🎉 Verified successfully! You can now use the menu below to start trading.",
+  
+  "main_menu_home": "🏠 Home",
+  "main_menu_sell": "💰 Sell My Group",
+  "main_menu_submissions": "📤 My Submissions",
+  "main_menu_support": "💬 Support",
+  "main_menu_faq": "❓ FAQ",
+  "main_menu_language": "🌐 Language",
+  
+  "upload_photo_prompt": "📸 Please upload the screenshot of the transfer. Make sure it clearly shows the group ownership transfer.",
+  
+  "sell_start": "🚀 Ready to sell your group?\nSend your group link or username now (example: t.me/yourgroup or @yourgroup).",
+  "invalid_group_link": "⚠️ Invalid format. Please send a valid Telegram group link (t.me/...) or username (@...).",
+  
+  "add_bot_admin": "🤖 Admin Check\nPlease add @EthioTeleTradeBot as an admin in your group.\n\nOnce done, tap the button below:",
+  "bot_admin_added": "✅ I Added the Bot as Admin",
+  "not_admin_yet": "❌ I’m not an admin yet. Please make sure I have admin access, then try again.",
+  
+  "checking_group": "⏳ Checking your group details...",
+  
+  "ask_creation_year": "🗓️ Select the year your group was created:",
+  "ask_creation_month": "🗓️ Now select the month your group was created:",
+  "ask_seller_username": "📧 Please share your Telegram username (format: @username) so we can contact you:",
+  "invalid_username": "⚠️ Invalid format. Please use @username.",
+  
+  "group_analysis": "✨ Group Valuation ✨\n\n📌 Name: {title}\n👥 Members: {members}\n📅 Created: {month} {year}\n💵 Offer: {price} Birr",
+  "date_unknown_fallback": "Unknown (Manual Review)",
+  
+  "group_not_valid_2024": "⛔ Not Eligible\nGroups created in May 2024 or later don’t meet our current purchase criteria.\n\nWe’re currently buying groups created before May 2024. Thanks for understanding!",
+  "group_manual_review": "🔎 Your group has been sent for manual review. Our team will check and contact you soon.",
+  
+  "transfer_instructions": "🔄 Group Transfer Steps\n\n1️⃣ Add or transfer ownership to @ethioteletrader\n2️⃣ Take a clear screenshot showing the admin or transfer confirmation\n3️⃣ Tap below to upload the screenshot\n\nNote: Please complete the transfer before uploading.",
+  "upload_screenshot_button": "📸 Upload Screenshot",
+  "cancel_button": "❌ Cancel",
+  
+  "screenshot_received": "📤 Screenshot received. Sending it for quick verification...",
+  "screenshot_invalid": "⚠️ Invalid file. Please upload a clear image (JPEG/PNG, max 5MB).",
+  
+  "submission_sent_admin": "🔔 Submission sent! You’ll be notified once our team verifies the transfer and prepares your payment.",
+  
+  "payment_enter_method_first": "✅ Transfer Verified!\n\nYour submission is approved for payment of {price} ETB.\nPlease tap below to enter your payment method and account number.",
+  "start_entering_details": "➡️ Enter Payment Details",
+  
+  "payment_method_choice_prompt": "💰 Price: {price}\n📌 Saved method: {method}\n👤 Account: {account}\n\nWould you like to use these or enter new details?",
+  
+  "ask_payment_method": "✍️ Please send your preferred payment method (e.g., Telebirr, CBE Birr, Awash Bank).",
+  "ask_payment_account": "🔢 Now send the account or phone number linked to your payment method.",
+  
+  "payment_info_received": "🙏 Thank you! Your payment details have been saved. Our admin will process your payment shortly.",
+  "payment_info_received_saved": "✅ Using your saved details:\n- Method: {method}\n- Account: {account}\n\nPayment will be processed soon.",
+  
+  "admin_payment_notification": "💰 PAYMENT INFO RECEIVED\n\nSubmission ID: {id}\nSeller: @{username}\nPrice: {price} ETB\nMethod: {method}\nAccount: {account}\n\nStatus: ready_for_payment",
+  
+  "payment_completed": "🥳 Payment Complete!\n\nWe’ve sent {price} Birr to your account.\n\nThank you for using Ethio Tele Trade Bot.",
+  "submission_rejected": "❌ Submission Rejected\nReason: {reason}\n\nPlease fix the issue (e.g., wrong link/admin) and resubmit.",
+  
+  "no_submissions": "📭 You don’t have any submissions yet. Tap 'Sell My Group' to start.",
+  
+  "submissions_list": "📋 Your Submission History:\n",
+  "submission_item": "\n━━━━━━━━━━━━━━━\nID: #{id} - {title}\nStatus: {status}\nOffer: {price} Birr\nDate: {date}\nPayout Info: {payment_info}\n",
+  
+  "status_pending": "⏳ Pending Review",
+  "status_awaiting_payment_info": "💵 Awaiting Payment Details",
+  "status_paid": "✅ Paid",
+  "status_rejected": "❌ Rejected",
+  "status_manual_review": "🔎 Manual Review",
+  
+  "support_message": "🎧 Need Help?\n\nCheck our FAQ or contact our admin for assistance.\nFor urgent issues, message @ethioteletrader.",
+  "contact_admin_button": "👤 Contact Admin",
+  
+  "faq_title": "❓ Frequently Asked Questions\n",
+  "faq_pricing": "💰 Pricing\n- 2016–2023 groups: 1000 Birr\n- Jan–Apr 2024: 300 Birr\n- May 2024 or later: Not eligible\n",
+  "faq_transfer": "🔄 How to Transfer\n1. Add @ethioteletrader as admin\n2. Or transfer ownership\n3. Screenshot confirmation\n4. Upload via bot\n",
+  "faq_payout": "⏱️ Payout Time\nPayments are processed within 24–48 hours after verification.\n",
+  "faq_contact": "For more questions, message @ethioteletrader.",
+  
+  "unknown_command": "🤔 I didn’t understand that.\nUse the menu below or type:\n/sell - Sell your group\n/support - Get help",
+  "rate_limit": "⏱️ Too fast! Please wait a moment before sending more requests.",
+  "error_occurred": "🔥 Oops! Something went wrong. Please try again or contact support.",
+  
+  "admin_panel_title": "🔧 Admin Panel\n\nPending Submissions:",
+  "admin_no_pending": "No pending submissions.",
+  "admin_submission_card": "\n━━━━━━━━━━━━━━━\nID: #{id}\nSeller: @{username}\nGroup: {title}\nMembers: {members}\nCreated: {month}/{year}\nPrice: {price} Birr\nStatus: {status}\n",
+  
+  "admin_view_screenshot": "📸 View Screenshot",
+  "admin_confirm_transfer": "✅ Confirm Transfer",
+  "admin_reject": "❌ Reject",
+  "admin_mark_paid": "💰 Mark as Paid",
+  "admin_export_csv": "📊 Export CSV",
+  
+  "admin_stats": "📊 Statistics\n\nTotal: {total}\nPending: {pending}\nApproved: {approved}\nPaid: {paid}\n\nTotal Birr Paid: {total_birr} Birr",
+  "admin_status_btn": "📊 Stats",
+  "admin_export": "⬇️ Export",
+  "admin_confirm_payment": "Are you sure you want to mark this as paid?\nSubmission #{id} - {price} Birr to @{username}",
+  "admin_yes": "✅ Yes, Mark Paid",
+  "admin_no": "❌ Cancel",
+  
+  "admin_reject_reason": "Please reply with the reason for rejection:",
+  "admin_rejection_sent": "Rejection sent to user.",
+  "admin_transfer_confirmed": "Transfer confirmed. Asking seller for payment details...",
+  
+  "pause_accepting": "The bot is currently paused. New submissions are temporarily closed.",
+  "process_cancelled": "❌ Process cancelled. Returning to main menu.",
+  "main_menu_return": "🏠 Back at main menu. Tap /start or use the buttons below to begin.",
+  
+  "month_1": "January",
+  "month_2": "February",
+  "month_3": "March",
+  "month_4": "April",
+  "month_5": "May",
+  "month_6": "June",
+  "month_7": "July",
+  "month_8": "August",
+  "month_9": "September",
+  "month_10": "October",
+  "month_11": "November",
+  "month_12": "December",
+  
+  "using_saved_details": "💾 Using your saved details...",
+  "change_payment_details": "✏️ Change Payment Details",
+  
+  "admin_mark_as_paid": "✅ Mark as Paid",
+  "admin_upload_payment_proof": "📸 Upload payment proof for this submission.",
+  "payment_completed_with_proof": "✅ Your payment of {price} ETB has been sent. See proof below.",
+  "payment_proof_caption": "Payment proof uploaded by admin.",
+  "admin_payment_marked": "✅ Payment marked as complete and seller notified.",
+  
+  "no_ready_for_payment": "📭 No submissions awaiting payment."
+}

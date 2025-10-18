@@ -1,0 +1,55 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+*.spec
+
+# ---- Virtual Environment ----
+venv/
+env/
+.venv/
+ENV/
+
+# ---- IDE & Editor Files ----
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# ---- Environment & Config ----
+.env
+.env.*
+*.secret
+*.token
+*.key
+
+# ---- Logs & Databases ----
+*.log
+*.sqlite3
+*.db
+logs/
+debug.log
+
+# ---- OS / Misc ----
+.DS_Store
+Thumbs.db
+
+# ---- Node (optional, for future mini-site) ----
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+
+# ---- Render / Deployment ----
+*.pid
+*.tar.gz
+*.zip
+
+# ---- Cache ----
+.cache/
+__cache__/
