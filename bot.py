@@ -113,6 +113,4 @@ async def start_polling():
 if __name__ == "__main__":
     if "--polling" in sys.argv:
         asyncio.run(start_polling())
-    else:
-        app = create_app()
-        web.run_app(app, host="0.0.0.0", port=PORT)
+   
