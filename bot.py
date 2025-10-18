@@ -8,6 +8,7 @@ from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_applicati
 from aiohttp import web
 from dotenv import load_dotenv
 
+# Your imports...
 from models.database import Database
 from middlewares.language_loader import LanguageMiddleware
 from middlewares.rate_limit import RateLimitMiddleware
@@ -19,8 +20,10 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# --- Configuration (Kept outside for imports) ---
 BOT_TOKEN = os.getenv('BOT_TOKEN')
-ADMIN_ID = [int(x.strip()) for x in os.getenv("ADMIN_ID", "").split(",") if x.strip().isdigit()]
+# Note: ADMIN_ID is read as a list of integers, which is correct for multi-admin support
+ADMIN_ID = [int(x.strip()) for x in os.getenv("ADMIN_ID", "").split(",") if x.strip().isdigit()] 
 CHANNEL_ID = os.getenv('CHANNEL_ID', '@TeleTradeET')
 DATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///data.db')
 LOG_CHANNEL_ID = int(os.getenv('LOG_CHANNEL_ID', 0)) if os.getenv('LOG_CHANNEL_ID') else None
@@ -54,8 +57,12 @@ def setup_handlers(dp: Dispatcher):
     dp['db'] = db
     dp['bot'] = bot
 
-# -------------------- Startup / Shutdown --------------------
+# -------------------- Startup / Shutdown (Webhook Mode) --------------------
 async def on_startup(app: web.Application):
+    """
+    Called when the aiohttp application starts. 
+    Initializes DB and sets the webhook URL with Telegram.
+    """
     await db.init_db()
     logger.info("Database initialized")
 
@@ -64,14 +71,20 @@ async def on_startup(app: web.Application):
     logger.info(f"Webhook set to: {webhook_url}")
 
 async def on_shutdown(app: web.Application):
+    """Called when the aiohttp application is shut down."""
     await bot.session.close()
     logger.info("Bot session closed")
 
 # -------------------- Health Check --------------------
 async def health_check(request):
     return web.Response(text="OK")
-# -------------------- ASGI App --------------------
+
+# -------------------- ASGI App Factory --------------------
 def create_app() -> web.Application:
+    """
+    Synchronous factory function to create and configure the aiohttp application.
+    This is the callable object required by Gunicorn/Uvicorn.
+    """
     app = web.Application()
     app.router.add_get("/health", health_check)
 
@@ -83,17 +96,9 @@ def create_app() -> web.Application:
     webhook_handler.register(app, path=WEBHOOK_PATH)
     setup_application(app, dp, bot=bot)
 
-    # Startup and cleanup signals
+    # Attach startup and cleanup signals
     app.on_startup.append(on_startup)
     app.on_cleanup.append(on_shutdown)
-
-    # Setup webhook asynchronously
-    async def setup_webhook(app: web.Application):
-        webhook_url = f"{BASE_URL}{WEBHOOK_PATH}"
-        await bot.set_webhook(webhook_url, drop_pending_updates=True)
-        logger.info(f"Webhook set to: {webhook_url}")
-
-    app.on_startup.append(setup_webhook)
 
     return app
 
@@ -113,4 +118,13 @@ async def start_polling():
 if __name__ == "__main__":
     if "--polling" in sys.argv:
         asyncio.run(start_polling())
-   
+    else:
+        # Run in webhook mode using aiohttp's built-in web server
+        # This is for local testing or simple aiohttp deployment
+        
+        # 1. Create the application object synchronously
+        app = create_app()
+
+        # 2. Run the application
+        logger.info(f"Starting webhook server on http://0.0.0.0:{PORT}")
+        web.run_app(app, host='0.0.0.0', port=PORT)

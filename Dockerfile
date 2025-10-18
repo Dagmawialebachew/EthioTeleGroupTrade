@@ -14,11 +14,12 @@ COPY requirements.txt .
 RUN pip install --upgrade pip setuptools wheel \
     && pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of your project
+# Copy the rest of your project (including main.py)
 COPY . .
 
-# Expose port (for webhooks / uvicorn)
-EXPOSE 8000
+# Expose port (8080 matches the default in main.py)
+EXPOSE 8080
 
-# Command to run the bot with Uvicorn using factory flag
-CMD ["sh", "-c", "uvicorn bot:create_app --factory --host 0.0.0.0 --port ${PORT:-8000} --loop asyncio"]
+# Command to run the bot using Gunicorn with the specialized aiohttp worker.
+# This points to the synchronous factory function main:create_app.
+CMD ["sh", "-c", "gunicorn main:create_app --worker-class aiohttp.GunicornWebWorker --bind 0.0.0.0:${PORT:-8080}"]
