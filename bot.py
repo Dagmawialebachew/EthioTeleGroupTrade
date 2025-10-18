@@ -80,10 +80,17 @@ async def health_check(request):
     return web.Response(text="OK")
 
 # -------------------- ASGI App Factory --------------------
-def create_app() -> web.Application:
+# --- BEFORE (Incorrect for aiohttp worker) ---
+# def create_app() -> web.Application:
+#     # ... setup code ...
+#     return app
+
+
+# --- AFTER (Correct for aiohttp.GunicornWebWorker) ---
+async def create_app() -> web.Application:
     """
-    Synchronous factory function to create and configure the aiohttp application.
-    This is the callable object required by Gunicorn/Uvicorn.
+    Asynchronous factory function to create and configure the aiohttp application.
+    The aiohttp.GunicornWebWorker expects this to be an async function.
     """
     app = web.Application()
     app.router.add_get("/health", health_check)
@@ -96,12 +103,11 @@ def create_app() -> web.Application:
     webhook_handler.register(app, path=WEBHOOK_PATH)
     setup_application(app, dp, bot=bot)
 
-    # Attach startup and cleanup signals
+    # Attach startup and cleanup signals (These were already async and are fine)
     app.on_startup.append(on_startup)
     app.on_cleanup.append(on_shutdown)
 
     return app
-
 # -------------------- Polling Mode --------------------
 async def start_polling():
     setup_handlers(dp)
