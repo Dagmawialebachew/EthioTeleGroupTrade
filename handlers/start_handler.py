@@ -73,7 +73,8 @@ def get_admin_panel_keyboard(lang_data: Dict) -> ReplyKeyboardMarkup:
     )
 
 
-# --- START COMMAND ---
+# --- START COMMAND ---git push -u origin main --force
+
 @router.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext, db, lang_data: dict):
     user = await db.get_user(message.from_user.id)
