@@ -104,7 +104,7 @@
   "admin_export_csv": "📊 Export CSV",
   
   "admin_stats": "📊 Statistics\n\nTotal: {total}\nPending: {pending}\nApproved: {approved}\nPaid: {paid}\n\nTotal Birr Paid: {total_birr} Birr",
-  "admin_status_btn": "📊 Stats",
+  "admin_stats_btn": "📊 Stats",
   "admin_export": "⬇️ Export",
   "admin_confirm_payment": "Are you sure you want to mark this as paid?\nSubmission #{id} - {price} Birr to @{username}",
   "admin_yes": "✅ Yes, Mark Paid",
