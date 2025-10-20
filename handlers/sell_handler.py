@@ -3,7 +3,8 @@ from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from utils.validators import validate_group_link, validate_image
+from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
+from utils.validators import resolve_group, validate_group_link, validate_image
 from utils.price_engine import calculate_price, get_month_name
 from datetime import datetime
 import os
@@ -28,7 +29,7 @@ class SellStates(StatesGroup):
 
 
 @router.message(Command("sell"))
-@router.message(F.text.in_(['💰 Sell My Group', '💰 ቡድኔን ሽጥ']))
+@router.message(F.text.in_(['💰 Sell My Group', '💰 ግሩፕ ለመሸጥ']))
 async def start_sell(message: Message, state: FSMContext, db, lang_data: dict):
     paused = await db.get_config('pause_accepting')
     if paused == 'true':
@@ -47,54 +48,84 @@ async def start_sell(message: Message, state: FSMContext, db, lang_data: dict):
 
 @router.message(SellStates.waiting_group_link)
 async def receive_group_link(message: Message, state: FSMContext, db, bot: Bot, lang_data: dict):
+    # Step 1: Validate the string format
     is_valid, username = validate_group_link(message.text)
-
     if not is_valid:
         await message.answer(lang_data['invalid_group_link'])
         return
 
-    await state.update_data(group_link=message.text, group_username=username)
+    # Step 2: Confirm with Telegram API that it's a group/supergroup
+    ok, chat = await resolve_group(bot, username)
+    if not ok:
+        await message.answer(lang_data['not_a_group'])
+        return
 
+    # Step 3: Save clean data into FSM
+    await state.update_data(
+        group_link=message.text.strip(),
+        group_username=username,
+        group_title=chat.title or username
+    )
+
+    # Step 4: Update FSM state and DB stage
     await state.set_state(SellStates.waiting_bot_admin)
     await db.update_user_stage(message.from_user.id, 'waiting_bot_admin')
 
+    # Step 5: Build inline keyboard
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=lang_data['bot_admin_added'], callback_data="check_admin")],
         [InlineKeyboardButton(text=lang_data['cancel_button'], callback_data="cancel_sell")]
     ])
 
+    # Step 6: Prompt user to add bot as admin
     await message.answer(lang_data['add_bot_admin'], reply_markup=keyboard)
 
-
-# --- CHECK ADMIN / DATE PROMPT START ---
 @router.callback_query(F.data == "check_admin")
 async def check_admin_status(callback: CallbackQuery, state: FSMContext, bot: Bot, db, lang_data: dict):
     await callback.answer(lang_data['checking_group'])
-    
+
     data = await state.get_data()
     group_username = data.get('group_username')
+    if not group_username:
+        # No username stored → ask again
+        await state.set_state(SellStates.waiting_group_link)
+        await db.update_user_stage(callback.from_user.id, 'waiting_group_link')
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=lang_data['cancel_button'], callback_data="cancel_sell")]
+        ])
+        await callback.message.edit_text(lang_data['ask_group_link_again'], reply_markup=keyboard)
+        return
+
+    group_ref = f"@{group_username}"
 
     try:
-        chat = await bot.get_chat(f"@{group_username}")
-        bot_member = await bot.get_chat_member(f"@{group_username}", bot.id)
+        chat = await bot.get_chat(group_ref)
+        bot_member = await bot.get_chat_member(chat.id, bot.id)
 
         if bot_member.status not in ['administrator', 'creator']:
-            await callback.answer(lang_data['not_admin_yet'], show_alert=True)
+            # Still not admin → stay in waiting_bot_admin
+            await state.set_state(SellStates.waiting_bot_admin)
+            await db.update_user_stage(callback.from_user.id, 'waiting_bot_admin')
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text=lang_data['bot_admin_added_again'], callback_data="check_admin")],
+                [InlineKeyboardButton(text=lang_data['cancel_button'], callback_data="cancel_sell")]
+            ])
+            await callback.message.edit_text(lang_data['not_admin_yet'], reply_markup=keyboard)
             return
 
-        member_count = await bot.get_chat_member_count(f"@{group_username}")
+        # Bot is admin → proceed
+        try:
+            member_count = await bot.get_chat_member_count(chat.id)
+        except Exception:
+            member_count = None
 
-        await state.update_data(
-            group_title=chat.title,
-            member_count=member_count
-        )
-
+        await state.update_data(group_title=chat.title or group_username,
+                                member_count=member_count)
         await state.set_state(SellStates.waiting_creation_year)
         await db.update_user_stage(callback.from_user.id, 'waiting_creation_year')
 
         current_year = datetime.now().year
         years = list(range(2018, current_year + 1))
-        
         year_buttons = []
         for i in range(0, len(years), 4):
             row = [InlineKeyboardButton(text=str(y), callback_data=f"year_{y}") for y in years[i:i+4]]
@@ -103,12 +134,30 @@ async def check_admin_status(callback: CallbackQuery, state: FSMContext, bot: Bo
         keyboard = InlineKeyboardMarkup(inline_keyboard=year_buttons + [
             [InlineKeyboardButton(text=lang_data['cancel_button'], callback_data="cancel_sell")]
         ])
-
         await callback.message.edit_text(lang_data['ask_creation_year'], reply_markup=keyboard)
 
-    except Exception:
-        await callback.answer(lang_data['not_admin_yet'], show_alert=True)
-        
+    except TelegramForbiddenError:
+        # Bot is banned or can’t access → keep in waiting_bot_admin
+        await state.set_state(SellStates.waiting_bot_admin)
+        await db.update_user_stage(callback.from_user.id, 'waiting_bot_admin')
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=lang_data['bot_admin_added_again'], callback_data="check_admin")],
+            [InlineKeyboardButton(text=lang_data['cancel_button'], callback_data="cancel_sell")]
+        ])
+        await callback.message.edit_text(lang_data['forbidden_group'], reply_markup=keyboard)
+
+    except TelegramBadRequest as e:
+        # Don’t reset to waiting_group_link here — just re‑prompt
+        await state.set_state(SellStates.waiting_bot_admin)
+        await db.update_user_stage(callback.from_user.id, 'waiting_bot_admin')
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=lang_data['bot_admin_added'], callback_data="check_admin")],
+            [InlineKeyboardButton(text=lang_data['cancel_button'], callback_data="cancel_sell")]
+        ])
+        await callback.message.edit_text(lang_data['not_admin_yet'], reply_markup=keyboard)
+
+    except Exception as e:
+        await callback.message.answer(lang_data['unexpected_error'])
 
 # --- Receive Creation Year ---
 @router.callback_query(F.data.startswith("year_"), SellStates.waiting_creation_year)
@@ -242,35 +291,48 @@ async def receive_screenshot(message: Message, state: FSMContext, db, bot: Bot, 
     await message.answer(lang_data['screenshot_received'])
 
     # --- Admin Notification Logic ---
-    admin_id = int(os.getenv('ADMIN_ID', 0))
+    admin_id = int(os.getenv("ADMIN_ID", 0))
     if admin_id:
         try:
-            # Note: We must ensure format_admin_card is imported or defined
-            from handlers.admin_handler import format_admin_card 
-            
-            card_text = format_admin_card(
-                submission_id,
-                message.from_user.username or str(message.from_user.id),
-                data['group_title'],
-                data['member_count'],
-                data['created_month'],
-                data['created_year'],
-                data['price'],
-                'manual_review' if data['status_type'] == 'manual_review' else 'pending',
-                lang_data
+            # Load admin's language pack
+            admin_user = await db.get_user(admin_id)
+            admin_lang_code = (admin_user.get("language") if admin_user else "en") or "en"
+            from middlewares.language_loader import LanguageMiddleware
+            middleware = LanguageMiddleware(db)
+            admin_lang_data = middleware.languages.get(admin_lang_code, middleware.languages["en"])
+
+            # Build a clickable group reference
+            group_display = data["group_title"] or data["group_username"]
+            print('here is the group link', data['group_link'])
+            if data['group_link']:
+                group_display = f"<a href='{data['group_link']}'>{group_display}</a>"
+            elif data.get("group_username"):
+                group_display = f"@{data['group_username']}"
+
+            # Format admin card (you can still call format_admin_card if you want)
+            card_text = (
+                f"📌 Submission #{submission_id}\n"
+                f"👤 Seller: @{message.from_user.username or message.from_user.id}\n"
+                f"👥 Group: {group_display}\n"
+                f"🔗 Group Link: {data['group_link']}\n"
+                f"👥 Members: {data['member_count']}\n"
+                f"📅 Created: {data['created_month']}/{data['created_year']}\n"
+                f"💵 Price: {data['price']} ETB\n"
+                f"📊 Status: {'manual_review' if data['status_type']=='manual_review' else 'pending'}"
             )
 
             keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text=lang_data['admin_view_screenshot'], callback_data=f"view_screenshot_{submission_id}")],
-                [InlineKeyboardButton(text=lang_data['admin_confirm_transfer'], callback_data=f"confirm_transfer_{submission_id}")],
-                [InlineKeyboardButton(text=lang_data['admin_reject'], callback_data=f"reject_{submission_id}")]
+                [InlineKeyboardButton(text=admin_lang_data["admin_view_screenshot"], callback_data=f"view_screenshot_{submission_id}")],
+                [InlineKeyboardButton(text=admin_lang_data["admin_confirm_transfer"], callback_data=f"confirm_transfer_{submission_id}")],
+                [InlineKeyboardButton(text=admin_lang_data["admin_reject"], callback_data=f"reject_{submission_id}")]
             ])
 
             await bot.send_photo(
                 admin_id,
                 photo=photo.file_id,
                 caption=card_text,
-                reply_markup=keyboard
+                reply_markup=keyboard,
+                parse_mode="HTML"
             )
         except Exception as e:
             print(f"Error sending submission to admin: {e}")
@@ -311,26 +373,42 @@ async def use_saved_payment(callback: CallbackQuery, state: FSMContext, db, bot:
     await callback.message.answer(lang_data['payment_info_received_saved'].format(
         method=payment_method, account=payment_account
     ))
-    
-    # 3. Notify the admin
-    admin_id = int(os.getenv('ADMIN_ID', 0))
+  # 3. Notify the admin
+    admin_id = int(os.getenv("ADMIN_ID", 0))
     if admin_id:
         try:
-            notification_text = lang_data['admin_payment_notification'].format(
+            # Load admin's language pack
+            admin_user = await db.get_user(admin_id)
+            admin_lang_code = (admin_user.get("language") if admin_user else "en") or "en"
+
+            from middlewares.language_loader import LanguageMiddleware
+            middleware = LanguageMiddleware(db)
+            admin_lang_data = middleware.languages.get(admin_lang_code, middleware.languages["en"])
+
+            notification_text = admin_lang_data["admin_payment_notification"].format(
                 id=submission_id,
                 username=callback.from_user.username or str(callback.from_user.id),
                 price=price,
                 method=payment_method,
-                account=payment_account
+                account=payment_account,
             )
-            await bot.send_message(admin_id, notification_text)
+            
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(
+                    text=admin_lang_data["admin_mark_as_paid"],
+                    callback_data=f"mark_paid_{submission_id}"
+                )]
+            ])
+            await bot.send_message(admin_id, notification_text, reply_markup=keyboard)
+
         except Exception as e:
             print(f"Error notifying admin after saved payment: {e}")
             pass
-            
+
     # 4. Clear the state
     await state.clear()
     await db.update_user_stage(user_id, None)
+
 
 
 @router.callback_query(F.data == "change_payment_details", SellStates.waiting_method_choice)
@@ -404,20 +482,28 @@ async def receive_payment_account(message: Message, state: FSMContext, db, bot: 
     await message.answer(lang_data['payment_info_received'])
     
     # 4. Notify the admin with inline button
-    admin_id = int(os.getenv('ADMIN_ID', 0))
+    admin_id = int(os.getenv("ADMIN_ID", 0))
     if admin_id:
         try:
-            notification_text = lang_data['admin_payment_notification'].format(
+            # Load admin's language pack
+            admin_user = await db.get_user(admin_id)
+            admin_lang_code = (admin_user.get("language") if admin_user else "en") or "en"
+
+            from middlewares.language_loader import LanguageMiddleware
+            middleware = LanguageMiddleware(db)
+            admin_lang_data = middleware.languages.get(admin_lang_code, middleware.languages["en"])
+
+            notification_text = admin_lang_data["admin_payment_notification"].format(
                 id=submission_id,
                 username=message.from_user.username or str(user_id),
                 price=price,
                 method=payment_method,
-                account=payment_account
+                account=payment_account,
             )
 
             keyboard = InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(
-                    text=lang_data['admin_mark_as_paid'],
+                    text=admin_lang_data["admin_mark_as_paid"],
                     callback_data=f"mark_paid_{submission_id}"
                 )]
             ])
@@ -427,10 +513,11 @@ async def receive_payment_account(message: Message, state: FSMContext, db, bot: 
         except Exception as e:
             print(f"Error notifying admin after new payment: {e}")
             pass
-            
+
     # 5. Clear the state
     await state.clear()
     await db.update_user_stage(user_id, None)
+
 
 # ----------------------------------------------------------------------
 #                       CANCEL HANDLERS
@@ -451,29 +538,25 @@ async def cancel_sell(callback: CallbackQuery, state: FSMContext, db, lang_data:
         # If the message is a complex one (e.g., photo caption), just send a new message.
         await callback.message.answer(lang_data['main_menu_return'])
 
-
 @router.message(Command("mysubmissions"))
 @router.message(F.text.in_(['📤 My Submissions', '📤 ማስረከቢያዎቼ']))
 async def my_submissions(message: Message, db, lang_data: dict):
-    # Note: Requires db.get_user_submissions to be implemented in database.py
+    # Fetch last 10 submissions for this user
     submissions = await db.get_user_submissions(message.from_user.id, 10)
 
     if not submissions:
         await message.answer(lang_data['no_submissions'])
         return
 
-    response = lang_data['submissions_list']
+    await message.answer(lang_data['submissions_list'])
 
     for sub in submissions:
         status_key = f"status_{sub['status']}"
         status_text = lang_data.get(status_key, sub['status'])
-
         date_str = sub['created_at'][:10] if sub['created_at'] else 'N/A'
-
-        # Note: submissions table now has separate payment_method/account fields
         payment_info = f"{sub.get('payment_method', 'N/A')}: {sub.get('payment_account', 'N/A')}"
-        
-        response += lang_data['submission_item'].format(
+
+        caption = lang_data['submission_item'].format(
             id=sub['id'],
             title=sub['group_title'] or 'N/A',
             status=status_text,
@@ -482,7 +565,25 @@ async def my_submissions(message: Message, db, lang_data: dict):
             payment_info=payment_info
         )
 
-    await message.answer(response)
+        # Prefer sending with screenshot if available
+        if sub.get('transfer_screenshot_file_id'):
+            try:
+                await message.answer_photo(
+                    photo=sub['transfer_screenshot_file_id'],
+                    caption=caption
+                )
+            except Exception:
+                # fallback if file_id is invalid
+                await message.answer(caption)
+        else:
+            await message.answer(caption)
 
-
-
+        # If admin uploaded a confirmation screenshot, show it too
+        if sub.get('admin_payment_screenshot'):
+            try:
+                await message.answer_photo(
+                    photo=sub['admin_payment_screenshot'],
+                    caption=lang_data.get('admin_proof_caption', '✅ Admin confirmation')
+                )
+            except Exception:
+                await message.answer(lang_data.get('admin_proof_caption', '✅ Admin confirmation'))

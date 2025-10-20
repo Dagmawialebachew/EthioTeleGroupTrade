@@ -13,7 +13,9 @@ from datetime import datetime
 from aiogram.fsm.storage.base import StorageKey # Already imported at the top!
 router = Router()
 
+import logging
 
+logger = logging.getLogger(__name__)
 class AdminStates(StatesGroup):
     waiting_rejection_reason = State()
     waiting_payment_screenshot = State()   # NEW
@@ -39,7 +41,6 @@ Check if a user is an admins.
     Supports multiple IDs from .env (ADMIN_IDS).
     """
     return user_id in ADMIN_ID
-
 @router.message(Command("payments"))
 async def list_ready_for_payment(message: Message, db, lang_data: dict):
     if not is_admin(message.from_user.id):
@@ -59,14 +60,28 @@ async def list_ready_for_payment(message: Message, db, lang_data: dict):
             )]
         ])
 
-        await message.answer(
+        caption = (
             f"💰 Submission #{sub['id']}\n"
             f"👤 Seller: @{sub.get('seller_username', 'Unknown')}\n"
             f"💵 Price: {sub['price']} ETB\n"
             f"📌 Method: {sub.get('payment_method', '-')}\n"
-            f"👤 Account: {sub.get('payment_account', '-')}\n",
-            reply_markup=kb
+            f"👤 Account: {sub.get('payment_account', '-')}\n"
         )
+
+        # If seller uploaded a transfer screenshot, send it with caption
+        if sub.get("transfer_screenshot_file_id"):
+            try:
+                await message.answer_photo(
+                    photo=sub["transfer_screenshot_file_id"],
+                    caption=caption,
+                    reply_markup=kb
+                )
+            except Exception:
+                # fallback if file_id is invalid
+                await message.answer(caption, reply_markup=kb)
+        else:
+            # no screenshot, just send text
+            await message.answer(caption, reply_markup=kb)
 
 @router.message(Command("panel"))
 async def admin_panel(message: Message, db, lang_data: dict):
@@ -135,145 +150,128 @@ async def back_to_main(message: Message, lang_data: dict):
         lang_data['welcome'],
         reply_markup=get_main_keyboard(lang_data, is_admin=is_admin(message.from_user.id))
     )
-    
+    logging.getLogger(__name__)
+
+# Helper: load target user's language pack
+async def get_user_lang_data(db, user_id):
+    user = await db.get_user(user_id)
+    lang_code = (user.get("language") if user else "en") or "en"
+    from middlewares.language_loader import LanguageMiddleware
+    middleware = LanguageMiddleware(db)
+    return middleware.languages.get(lang_code, middleware.languages["en"])
+
+
 @router.callback_query(F.data.startswith("view_screenshot_"))
-async def view_screenshot(callback: CallbackQuery, db, bot):
+async def view_screenshot(callback: CallbackQuery, db, bot: Bot):
     submission_id = int(callback.data.split('_')[-1])
     submission = await db.get_submission(submission_id)
 
-    if not submission or not submission.get('transfer_screenshot_file_id'):
+    if not submission or not submission.get("transfer_screenshot_file_id"):
         await callback.answer("Screenshot not found", show_alert=True)
         return
 
     await callback.answer()
     await bot.send_photo(
         callback.from_user.id,
-        photo=submission['transfer_screenshot_file_id'],
+        photo=submission["transfer_screenshot_file_id"],
         caption=f"Screenshot for submission #{submission_id}"
     )
 
+
 @router.callback_query(F.data.startswith("confirm_transfer_"))
-async def confirm_transfer(callback: CallbackQuery, db, bot: Bot, lang_data: dict, state: FSMContext): 
+async def confirm_transfer(callback: CallbackQuery, db, bot: Bot, lang_data: dict, state: FSMContext):
     if not is_admin(callback.from_user.id):
         return
 
     submission_id = int(callback.data.split('_')[-1])
     submission = await db.get_submission(submission_id)
-
-    # ✅ Check submission first before touching its fields
     if not submission:
         await callback.answer("Submission not found", show_alert=True)
         return
 
     user_id = submission["user_id"]
     user = await db.get_user(user_id)
-
     if not user:
         await callback.answer("User not found", show_alert=True)
         return
 
-    # Update submission status in DB
+    # Update DB
     await db.update_submission(submission_id, {"status": "awaiting_payment_info"})
     await db.log_admin_action(callback.from_user.id, "confirm_transfer", submission_id)
-
     await callback.answer(lang_data["admin_transfer_confirmed"], show_alert=True)
 
     try:
-        # --- Prepare FSM Context for the Target User ---
-        user_key = StorageKey(
-            bot_id=bot.id, 
-            chat_id=user_id, 
-            user_id=user_id,
-            thread_id=None
-        )
+        # Prepare FSM for seller
+        user_key = StorageKey(bot_id=bot.id, chat_id=user_id, user_id=user_id, thread_id=None)
         user_state = FSMContext(storage=state.storage, key=user_key)
-
-        # Store the submission ID in the user's FSM context
         await user_state.update_data(active_submission_id=submission_id)
-
-        # Set the state to the new CHOICE state
         await user_state.set_state(SellStates.waiting_method_choice)
         await db.update_user_stage(user_id, "waiting_method_choice")
-        # -----------------------------------------------
 
-        # 1. Check if the user has saved payment details from the DB
+        # Load seller's language
+        seller_lang = await get_user_lang_data(db, user_id)
+
         has_saved_details = user.get("payment_method") and user.get("payment_account")
-
         if has_saved_details:
-            method = user["payment_method"]
-            account = user["payment_account"]
-
-            # Option A: Saved Details Exist (Offer Reuse or Change)
-            prompt_text = lang_data["payment_method_choice_prompt"].format(
-                price=submission["price"],
-                method=method, 
-                account=account
+            method, account = user["payment_method"], user["payment_account"]
+            prompt_text = seller_lang["payment_method_choice_prompt"].format(
+                price=submission["price"], method=method, account=account
             )
             user_keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text=lang_data["using_saved_details"], callback_data=f"use_saved_payment_{submission_id}")],
-                [InlineKeyboardButton(text=lang_data["change_payment_details"], callback_data="change_payment_details")],
-                [InlineKeyboardButton(text=lang_data["cancel_button"], callback_data="cancel_sell_process")]
+                [InlineKeyboardButton(text=seller_lang["using_saved_details"], callback_data=f"use_saved_payment_{submission_id}")],
+                [InlineKeyboardButton(text=seller_lang["change_payment_details"], callback_data="change_payment_details")],
+                [InlineKeyboardButton(text=seller_lang["cancel_button"], callback_data="cancel_sell_process")]
             ])
         else:
-            # Option B: No Saved Details (Prompt to start entering new details)
-            prompt_text = lang_data["payment_enter_method_first"].format(price=submission["price"])
+            prompt_text = seller_lang["payment_enter_method_first"].format(price=submission["price"])
             user_keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text=lang_data["start_entering_details"], callback_data="change_payment_details")], 
-                [InlineKeyboardButton(text=lang_data["cancel_button"], callback_data="cancel_sell_process")]
+                [InlineKeyboardButton(text=seller_lang["start_entering_details"], callback_data="change_payment_details")],
+                [InlineKeyboardButton(text=seller_lang["cancel_button"], callback_data="cancel_sell_process")]
             ])
 
-        await bot.send_message(
-            user_id,
-            prompt_text,
-            reply_markup=user_keyboard
-        )
+        await bot.send_message(user_id, prompt_text, reply_markup=user_keyboard)
     except Exception as e:
-        print(f"Error sending message to user {user_id}: {e}")
-        # swallow error so admin flow continues
+        logger.error(f"Error sending payment prompt to user {user_id}: {e}")
 
-    # Remove inline buttons from the admin message
     await callback.message.edit_reply_markup(reply_markup=None)
+
 
 @router.callback_query(F.data.startswith("reject_"))
 async def start_reject(callback: CallbackQuery, state: FSMContext, lang_data: dict):
     if not is_admin(callback.from_user.id):
         return
-
     submission_id = int(callback.data.split('_')[-1])
     await state.update_data(reject_submission_id=submission_id)
     await state.set_state(AdminStates.waiting_rejection_reason)
-
     await callback.answer()
-    await callback.message.answer(lang_data['admin_reject_reason'])
+    await callback.message.answer(lang_data["admin_reject_reason"])
 
 
 @router.message(AdminStates.waiting_rejection_reason)
-async def receive_rejection_reason(message: Message, state: FSMContext, db, bot, lang_data: dict):
+async def receive_rejection_reason(message: Message, state: FSMContext, db, bot: Bot, lang_data: dict):
     if not is_admin(message.from_user.id):
         return
 
     data = await state.get_data()
-    submission_id = data.get('reject_submission_id')
+    submission_id = data.get("reject_submission_id")
     reason = message.text
-
     submission = await db.get_submission(submission_id)
 
     if submission:
-        await db.update_submission(submission_id, {
-            'status': 'rejected',
-            'admin_notes': reason
-        })
-        await db.log_admin_action(message.from_user.id, 'reject', submission_id, reason)
+        await db.update_submission(submission_id, {"status": "rejected", "admin_notes": reason})
+        await db.log_admin_action(message.from_user.id, "reject", submission_id, reason)
 
+        # Notify seller in their language
+        seller_lang = await get_user_lang_data(db, submission["user_id"])
         try:
             await bot.send_message(
-                submission['user_id'],
-                lang_data['submission_rejected'].format(reason=reason)
+                submission["user_id"],
+                seller_lang["submission_rejected"].format(reason=reason)
             )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.error(f"Error notifying seller of rejection: {e}")
 
-        await message.answer(lang_data['admin_rejection_sent'])
+        await message.answer(lang_data["admin_rejection_sent"])
 
     await state.clear()
 
@@ -282,30 +280,22 @@ async def receive_rejection_reason(message: Message, state: FSMContext, db, bot,
 async def confirm_mark_paid(callback: CallbackQuery, db, lang_data: dict):
     if not is_admin(callback.from_user.id):
         return
-
     submission_id = int(callback.data.split('_')[-1])
     submission = await db.get_submission(submission_id)
-
     if not submission:
         await callback.answer("Submission not found", show_alert=True)
         return
 
-    user = await db.get_user(submission['user_id'])
-    username = user.get('username', 'Unknown') if user else 'Unknown'
+    user = await db.get_user(submission["user_id"])
+    username = user.get("username", "Unknown") if user else "Unknown"
 
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(text=lang_data['admin_yes'], callback_data=f"confirm_paid_{submission_id}"),
-            InlineKeyboardButton(text=lang_data['admin_no'], callback_data=f"cancel_paid_{submission_id}")
-        ]
-    ])
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text=lang_data["admin_yes"], callback_data=f"confirm_paid_{submission_id}"),
+        InlineKeyboardButton(text=lang_data["admin_no"], callback_data=f"cancel_paid_{submission_id}")
+    ]])
 
     await callback.message.answer(
-        lang_data['admin_confirm_payment'].format(
-            id=submission_id,
-            price=submission['price'],
-            username=username
-        ),
+        lang_data["admin_confirm_payment"].format(id=submission_id, price=submission["price"], username=username),
         reply_markup=keyboard
     )
     await callback.answer()
@@ -315,25 +305,54 @@ async def confirm_mark_paid(callback: CallbackQuery, db, lang_data: dict):
 async def mark_as_paid(callback: CallbackQuery, state: FSMContext, db, lang_data: dict):
     if not is_admin(callback.from_user.id):
         return
-
     submission_id = int(callback.data.split('_')[-1])
     submission = await db.get_submission(submission_id)
-
     if not submission:
         await callback.answer("Submission not found", show_alert=True)
         return
 
-    # Store submission_id in FSM
     await state.update_data(payment_submission_id=submission_id)
     await state.set_state(AdminStates.waiting_payment_screenshot)
-
-    await callback.message.answer(lang_data['admin_upload_payment_proof'])
+    await callback.message.answer(lang_data["admin_upload_payment_proof"])
     await callback.answer()
+
 
 @router.callback_query(F.data.startswith("cancel_paid_"))
 async def cancel_mark_paid(callback: CallbackQuery):
     await callback.answer("Cancelled", show_alert=True)
     await callback.message.delete()
+
+
+@router.message(AdminStates.waiting_payment_screenshot, F.photo)
+async def receive_payment_screenshot(message: Message, state: FSMContext, db, bot: Bot, lang_data: dict):
+    if not is_admin(message.from_user.id):
+        return
+
+    data = await state.get_data()
+    submission_id = data.get("payment_submission_id")
+    file_id = message.photo[-1].file_id
+
+    await db.update_submission(submission_id, {"status": "paid", "admin_payment_screenshot": file_id})
+    await db.log_admin_action(message.from_user.id, "mark_paid", submission_id, "Payment screenshot uploaded")
+
+    submission = await db.get_submission(submission_id)
+    if submission:
+        seller_lang = await get_user_lang_data(db, submission["user_id"])
+        try:
+            await bot.send_message(
+                submission["user_id"],
+                seller_lang["payment_completed_with_proof"].format(price=submission["price"])
+            )
+            await bot.send_photo(
+                submission["user_id"],
+                file_id,
+                caption=seller_lang["payment_proof_caption"]
+            )
+        except Exception as e:
+            logger.error(f"Error notifying seller of payment: {e}")
+
+    await message.answer(lang_data["admin_payment_marked"])
+    await state.clear()
 
 
 @router.message(Command("stats"))
@@ -413,43 +432,5 @@ async def pause_accepting(message: Message, db):
 
     status = "paused" if new_value == 'true' else "resumed"
     await message.answer(f"Bot submissions {status}")
-
-
-
-@router.message(AdminStates.waiting_payment_screenshot, F.photo)
-async def receive_payment_screenshot(message: Message, state: FSMContext, db, bot, lang_data: dict):
-    if not is_admin(message.from_user.id):
-        return
-
-    data = await state.get_data()
-    submission_id = data.get("payment_submission_id")
-    photo = message.photo[-1]
-    file_id = photo.file_id
-
-    # Save screenshot + update status
-    await db.update_submission(submission_id, {
-        "status": "paid",
-        "admin_payment_screenshot": file_id
-    })
-    await db.log_admin_action(message.from_user.id, "mark_paid", submission_id, "Payment screenshot uploaded")
-
-    # Notify seller
-    submission = await db.get_submission(submission_id)
-    if submission:
-        try:
-            await bot.send_message(
-                submission["user_id"],
-                lang_data['payment_completed_with_proof'].format(price=submission['price'])
-            )
-            await bot.send_photo(
-                submission["user_id"],
-                file_id,
-                caption=lang_data['payment_proof_caption']
-            )
-        except Exception as e:
-            print(f"Error notifying seller: {e}")
-
-    await message.answer(lang_data['admin_payment_marked'])
-    await state.clear()
 
 

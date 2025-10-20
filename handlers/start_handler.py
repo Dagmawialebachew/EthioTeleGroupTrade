@@ -175,23 +175,32 @@ async def cmd_language(message: Message, db, lang_data: dict):
     await message.answer(lang_data['select_language'], reply_markup=keyboard)
 
 
+
 @router.callback_query(F.data.startswith("change_lang_"))
-async def change_language(callback: CallbackQuery, db):
+async def change_language(callback: CallbackQuery, db, state: FSMContext):
     lang_code = callback.data.split('_')[-1]
     await db.update_user_language(callback.from_user.id, lang_code)
 
+    # Reset FSM state so user isn’t stuck in waiting_group_link
+    await state.clear()
+    await db.update_user_stage(callback.from_user.id, None)
+
+    # Load language strings
     from middlewares.language_loader import LanguageMiddleware
     middleware = LanguageMiddleware(db)
     lang_data = middleware.languages.get(lang_code, middleware.languages['en'])
 
     await callback.answer(lang_data['language_changed'], show_alert=True)
-    await callback.message.delete()
+
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+
     await callback.message.answer(
         lang_data['welcome'],
         reply_markup=get_main_keyboard(lang_data, is_admin=is_admin(callback.from_user.id))
     )
-
-
 # --- HOME MENU ---
 @router.message(F.text.in_(['🏠 Home', '🏠 መነሻ']))
 async def home_menu(message: Message, lang_data: dict):

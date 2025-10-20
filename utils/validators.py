@@ -1,32 +1,59 @@
 import re
 from typing import Optional, Tuple
+from aiogram import Bot
+from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
+from aiogram.types import Chat
+# Telegram usernames: 5–32 chars, letters, digits, underscores
+USERNAME_PATTERN = re.compile(r'^[a-zA-Z0-9_]{5,32}$')
 
 
 def validate_group_link(link: str) -> Tuple[bool, Optional[str]]:
-    link = link.strip()
-
-    if link.startswith('@'):
-        username = link[1:]
-        if re.match(r'^[a-zA-Z0-9_]{5,32}$', username):
-            return True, username
+    """
+    Validate a Telegram group link or @username (string-level only).
+    Returns (True, normalized_username) if valid, else (False, None).
+    Normalized username is returned WITHOUT the '@'.
+    """
+    if not link:
         return False, None
 
+    link = link.strip()
+
+    # Case 1: @username
+    if link.startswith('@'):
+        username = link[1:]
+        if USERNAME_PATTERN.fullmatch(username):
+             return True, username
+        return False, None
+
+    # Case 2: t.me / telegram.me links
     patterns = [
-        r't\.me/([a-zA-Z0-9_]{5,32})',
-        r'https?://t\.me/([a-zA-Z0-9_]{5,32})',
-        r'telegram\.me/([a-zA-Z0-9_]{5,32})',
-        r'https?://telegram\.me/([a-zA-Z0-9_]{5,32})'
+        r'^(?:https?://)?t\.me/([a-zA-Z0-9_]{5,32})$',
+        r'^(?:https?://)?telegram\.me/([a-zA-Z0-9_]{5,32})$'
     ]
 
     for pattern in patterns:
-        match = re.search(pattern, link)
+        match = re.match(pattern, link)
         if match:
             username = match.group(1)
-            if not username.endswith('bot'):
+            if USERNAME_PATTERN.fullmatch(username):
                 return True, username
 
     return False, None
 
+
+async def resolve_group(bot: Bot, username: str) -> Tuple[bool, Optional[Chat]]:
+    """
+    Confirm via Telegram API that the username belongs to a group/supergroup.
+    Expects a normalized username (without '@').
+    Returns (True, Chat) if valid group, else (False, None).
+    """
+    try:
+        chat = await bot.get_chat(f"@{username}")
+        if chat.type in ["group", "supergroup"]:
+            return True, chat
+        return False, None
+    except (TelegramBadRequest, TelegramForbiddenError):
+        return False, None
 
 def validate_username(username: str) -> Tuple[bool, Optional[str]]:
     username = username.strip()

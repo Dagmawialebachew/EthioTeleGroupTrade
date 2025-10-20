@@ -29,6 +29,7 @@
   
   "add_bot_admin": "🤖 Admin Check\nPlease add @EthioTeleTradeBot as an admin in your group.\n\nOnce done, tap the button below:",
   "bot_admin_added": "✅ I Added the Bot as Admin",
+  "bot_admin_added_again": "✅ I Added the Bot as Admin (Try Again)",
   "not_admin_yet": "❌ I’m not an admin yet. Please make sure I have admin access, then try again.",
   
   "checking_group": "⏳ Checking your group details...",
@@ -140,5 +141,12 @@
   "payment_proof_caption": "Payment proof uploaded by admin.",
   "admin_payment_marked": "✅ Payment marked as complete and seller notified.",
   
-  "no_ready_for_payment": "📭 No submissions awaiting payment."
+  "no_ready_for_payment": "📭 No submissions awaiting payment.",
+
+  
+  "missing_group": "⚠️ No group username provided. Please enter a valid group username.",
+  "not_a_group": "🚫 That username does not belong to a group.",
+  "forbidden_group": "🔒 I don’t have permission to access this group. Make sure I’m added first.",
+  "unexpected_error": "⚠️ Something went wrong. Please try again later.",
+"ask_group_link_again": "⚠️ I couldn’t find your group info. Please enter your group username or link again."
 }
